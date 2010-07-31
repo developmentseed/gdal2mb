@@ -47,8 +47,8 @@ verbose = False
 tilesize = 256
 tileformat = 'png'
 
-tempdriver = gdal.GetDriverByName( 'MEM' )
-tiledriver = gdal.GetDriverByName( tileformat )
+tempdriver = gdal.GetDriverByName('MEM')
+tiledriver = gdal.GetDriverByName(tileformat)
 
 # =============================================================================
 def writetile( filename, data, dxsize, dysize, bands):
@@ -70,6 +70,34 @@ def writetile( filename, data, dxsize, dysize, bands):
     if bands == 3 and tileformat == 'png':
         tmp = tempdriver.Create('', tilesize, tilesize, bands=4)
         alpha = tmp.GetRasterBand(4)
+        alphaarray = (zeros((dysize, dxsize)) + 255).astype('b')
+        alpha.WriteArray(alphaarray, 0, tilesize-dysize )
+    else:
+        tmp = tempdriver.Create('', tilesize, tilesize, bands=bands)
+
+    # (write data from the bottom left corner)
+    tmp.WriteRaster(0, tilesize-dysize, dxsize, dysize, data, band_list=range(1, bands+1))
+ 
+    # ... and then copy it into the final tile with given filename
+    tiledriver.CreateCopy(filename, tmp, strict=0)
+
+    return 0
+
+# =============================================================================
+def writemb(filename, data, dxsize, dysize, bands, mb_db):
+    """
+    Write raster 'data' (of the size 'dataxsize' x 'dataysize') read from
+    'dataset' into the mbtiles document 'mb_db' with size 'tilesize' pixels.
+    Later this should be replaced by new <TMS Tile Raster Driver> from GDAL.
+    """
+
+    # GRR, PNG DRIVER DOESN'T HAVE CREATE() !!!
+    # so we have to create temporary file in memmory...
+
+    #TODO: Add transparency to files with one band only too (grayscale).
+    if bands == 3 and tileformat == 'png':
+        tmp = tempdriver.Create('', tilesize, tilesize, bands=4)
+        alpha = tmp.GetRasterBand(4)
         #from Numeric import zeros
         alphaarray = (zeros((dysize, dxsize)) + 255).astype('b')
         alpha.WriteArray( alphaarray, 0, tilesize-dysize )
@@ -80,20 +108,17 @@ def writetile( filename, data, dxsize, dysize, bands):
     tmp.WriteRaster( 0, tilesize-dysize, dxsize, dysize, data, band_list=range(1, bands+1))
  
     # ... and then copy it into the final tile with given filename
-    tiledriver.CreateCopy(filename, tmp, strict=0)
+    # d = tiledriver.CreateCopy(filename, tmp, strict=0)
+    raw_data = tmp.ReadRaster(0, tilesize-dysize, dxsize, dysize))
 
     return 0
-
-
-
-
 
 # =============================================================================
 def Usage():
     print 'Usage: gdal2tiles.py [-title "Title"] [-publishurl http://yourserver/dir/]'
     print '                     [-nogooglemaps] [-noopenlayers] [-nokml]'
     print '                     [-googlemapskey KEY] [-forcekml] [-v]'
-    print '                     input_file [output_dir]'
+    print '                     input_file [output_dir or outputfile.mbtiles]'
     print
 
 # =============================================================================
@@ -125,6 +150,7 @@ if __name__ == '__main__':
         sys.exit( 0 )
 
     # Parse command line arguments.
+    # TODO: rewrite in OptionParser form
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -188,6 +214,7 @@ if __name__ == '__main__':
         publishurl += '/'
     if publishurl:
         publishurl += os.path.basename(output_dir) + '/'
+    mb_output = os.path.splitext(output_dir)[1] == '.mbtiles':
 
     # Open input_file and get all necessary information.
     dataset = gdal.Open( input_file, GA_ReadOnly )
@@ -246,11 +273,11 @@ if __name__ == '__main__':
     sum = lambda seq, start=0: reduce( operator.add, seq, start)
 
     # Zoom levels of the pyramid.
-    maxzoom = int(max( ceil(log2(xsize/float(tilesize))), ceil(log2(ysize/float(tilesize)))))
+    maxzoom = int(max(ceil(log2(xsize/float(tilesize))), ceil(log2(ysize/float(tilesize)))))
     zoompixels = [geotransform[1] * 2.0**(maxzoom-zoom) for zoom in range(0, maxzoom+1)]
     tilecount = sum( [
-        int( ceil( xsize / (2.0**(maxzoom-zoom)*tilesize))) * \
-        int( ceil( ysize / (2.0**(maxzoom-zoom)*tilesize))) \
+        int(ceil(xsize / (2.0**(maxzoom-zoom)*tilesize))) * \
+        int(ceil(ysize / (2.0**(maxzoom-zoom)*tilesize))) \
         for zoom in range(maxzoom+1)
     ] )
 
@@ -269,7 +296,7 @@ if __name__ == '__main__':
 
     # Generate tilemapresource.xml.
     f = open(os.path.join(output_dir, 'tilemapresource.xml'), 'w')
-    f.write( generate.generate_tilemapresource( 
+    f.write(generate.generate_tilemapresource( 
         title = title,
         north = north,
         south = south,
@@ -345,6 +372,11 @@ if __name__ == '__main__':
     #
     tileno = 0
     progress = 0
+
+    if mb_output:
+        mb_db_filename = output_dir
+        mb_db = sqlite3.connect(mb_db_filename)
+
     for zoom in range(maxzoom, -1, -1):
 
         # Maximal size of read window in pixels.
@@ -366,10 +398,10 @@ if __name__ == '__main__':
             # Read window left coordinate in pixels.
             rx = int(ix * rmaxsize)
 
-            for iy in range(0, int( ceil( ysize / rmaxsize))):
+            for iy in range(0, int(ceil( ysize / rmaxsize))):
 
                 # Read window ysize in pixels.
-                if iy+1 == int( ceil( ysize / rmaxsize)) and ysize % rmaxsize != 0:
+                if iy+1 == int(ceil( ysize / rmaxsize)) and ysize % rmaxsize != 0:
                     rysize = int(ysize % rmaxsize)
                 else:
                     rysize = int(rmaxsize)
@@ -399,12 +431,15 @@ if __name__ == '__main__':
                 # Load raster from read window.
                 data = dataset.ReadRaster(rx, ry, rxsize, rysize, dxsize, dysize)
                 # Write that raster to the tile.
-                writetile( filename, data, dxsize, dysize, bands)
+                if mb_output:
+                    writemb((zoom, ix, iy), data, dxsize, dysize, bands, mb_db)
+                else:
+                    writetile(filename, data, dxsize, dysize, bands)
                
                 # Create a KML file for this tile.
                 if generatekml:
-                    f = open( os.path.join(output_dir, '%d/%d/%d.kml' % (zoom, ix, iy)), 'w')
-                    f.write( generate.generate_kml(
+                    f = open(os.path.join(output_dir, '%d/%d/%d.kml' % (zoom, ix, iy)), 'w')
+                    f.write(generate.generate_kml(
                         zoom = zoom,
                         ix = ix,
                         iy = iy,
