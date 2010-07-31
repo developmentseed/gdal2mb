@@ -33,10 +33,10 @@
 # OpenLayers 2.4 patch, note on #1763
 #
 
-import gdal
+from osgeo import gdal 
 import sys, os, tempfile
-from gdalconst import GA_ReadOnly
-from osr import SpatialReference
+from osgeo.gdalconst import GA_ReadOnly
+from osgeo.osr import SpatialReference
 from math import ceil, log10
 import operator
 
