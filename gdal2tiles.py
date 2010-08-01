@@ -42,10 +42,12 @@ import operator
 
 import generate
 
+import sqlite3
+
 verbose = False
 
 tilesize = 256
-tileformat = 'png'
+tileformat = 'jpeg'
 
 tempdriver = gdal.GetDriverByName('MEM')
 tiledriver = gdal.GetDriverByName(tileformat)
@@ -84,7 +86,7 @@ def writetile( filename, data, dxsize, dysize, bands):
     return 0
 
 # =============================================================================
-def writemb(filename, data, dxsize, dysize, bands, mb_db):
+def writemb(index, data, dxsize, dysize, bands, mb_db):
     """
     Write raster 'data' (of the size 'dataxsize' x 'dataysize') read from
     'dataset' into the mbtiles document 'mb_db' with size 'tilesize' pixels.
@@ -108,9 +110,15 @@ def writemb(filename, data, dxsize, dysize, bands, mb_db):
     tmp.WriteRaster( 0, tilesize-dysize, dxsize, dysize, data, band_list=range(1, bands+1))
  
     # ... and then copy it into the final tile with given filename
-    # d = tiledriver.CreateCopy(filename, tmp, strict=0)
-    raw_data = tmp.ReadRaster(0, tilesize-dysize, dxsize, dysize))
+    tiledriver.CreateCopy('tmp.png', tmp, strict=0)
 
+    # print raw_data
+    query = """insert into tiles (zoom_level, tile_column, tile_row, tile_data) values (%d, %d, %d, ?)""" % (index[0], index[1], index[2])
+    cur = mb_db.cursor()
+    d = open('tmp.png', 'rb').read()
+    cur.execute(query, (sqlite3.Binary(d),))
+    mb_db.commit()
+    cur.close()
     return 0
 
 # =============================================================================
@@ -214,7 +222,7 @@ if __name__ == '__main__':
         publishurl += '/'
     if publishurl:
         publishurl += os.path.basename(output_dir) + '/'
-    mb_output = os.path.splitext(output_dir)[1] == '.mbtiles':
+    mb_output = os.path.splitext(output_dir)[1] == '.mbtiles'
 
     # Open input_file and get all necessary information.
     dataset = gdal.Open( input_file, GA_ReadOnly )
@@ -282,8 +290,8 @@ if __name__ == '__main__':
     ] )
 
     # Create output directory, if it doesn't exist
-    if not os.path.isdir(output_dir):
-        os.makedirs(output_dir)
+    #if not os.path.isdir(output_dir):
+    #    os.makedirs(output_dir)
 
     if verbose:
         print "Output (%s):" % output_dir
@@ -295,77 +303,77 @@ if __name__ == '__main__':
         print "  Pixel resolution by zoomlevels:", zoompixels
 
     # Generate tilemapresource.xml.
-    f = open(os.path.join(output_dir, 'tilemapresource.xml'), 'w')
-    f.write(generate.generate_tilemapresource( 
-        title = title,
-        north = north,
-        south = south,
-        east = east,
-        west = west,
-        isepsg4326 = isepsg4326,
-        projection = projection,
-        publishurl = publishurl,
-        zoompixels = zoompixels,
-        tilesize = tilesize,
-        tileformat = tileformat,
-        profile = profile
-    ))
-    f.close()
+    # f = open(os.path.join(output_dir, 'tilemapresource.xml'), 'w')
+    # f.write(generate.generate_tilemapresource( 
+    #     title = title,
+    #     north = north,
+    #     south = south,
+    #     east = east,
+    #     west = west,
+    #     isepsg4326 = isepsg4326,
+    #     projection = projection,
+    #     publishurl = publishurl,
+    #     zoompixels = zoompixels,
+    #     tilesize = tilesize,
+    #     tileformat = tileformat,
+    #     profile = profile
+    # ))
+    # f.close()
 
-    # Generate googlemaps.html
-    if not nogooglemaps:
-        f = open(os.path.join(output_dir, 'googlemaps.html'), 'w')
-        f.write( generate.generate_googlemaps(
-          title = title,
-          googlemapskey = googlemapskey,
-          xsize = xsize,
-          ysize = ysize,
-          maxzoom = maxzoom,
-          tilesize = tilesize
-        ))
-        f.close()
+    # # Generate googlemaps.html
+    # if not nogooglemaps:
+    #     f = open(os.path.join(output_dir, 'googlemaps.html'), 'w')
+    #     f.write( generate.generate_googlemaps(
+    #       title = title,
+    #       googlemapskey = googlemapskey,
+    #       xsize = xsize,
+    #       ysize = ysize,
+    #       maxzoom = maxzoom,
+    #       tilesize = tilesize
+    #     ))
+    #     f.close()
 
-    # Generate openlayers.html
-    if not noopenlayers:
-        f = open(os.path.join(output_dir, 'openlayers.html'), 'w')
-        f.write( generate.generate_openlayers(
-          title = title,
-          xsize = xsize,
-          ysize = ysize,
-          maxzoom = maxzoom,
-          tileformat = tileformat
-        ))
-        f.close()
-        
-    # Generate Root KML
-    if generatekml:
-        f = open(os.path.join(output_dir, 'doc.kml'), 'w')
-        f.write( generate.generate_rootkml(
-            title = title,
-            north = north,
-            south = south,
-            east = east,
-            west = west,
-            tilesize = tilesize,
-            tileformat = tileformat,
-            publishurl = ""
-        ))
-        f.close()
-        
-    # Generate Root KML with publishurl
-    if generatekml and publishurl:
-        f = open(os.path.join(output_dir, os.path.basename(output_dir)+'.kml'), 'w')
-        f.write( generate.generate_rootkml(
-            title = title,
-            north = north,
-            south = south,
-            east = east,
-            west = west,
-            tilesize = tilesize,
-            tileformat = tileformat,
-            publishurl = publishurl
-        ))
-        f.close()
+    # # Generate openlayers.html
+    # if not noopenlayers:
+    #     f = open(os.path.join(output_dir, 'openlayers.html'), 'w')
+    #     f.write( generate.generate_openlayers(
+    #       title = title,
+    #       xsize = xsize,
+    #       ysize = ysize,
+    #       maxzoom = maxzoom,
+    #       tileformat = tileformat
+    #     ))
+    #     f.close()
+    #     
+    # # Generate Root KML
+    # if generatekml:
+    #     f = open(os.path.join(output_dir, 'doc.kml'), 'w')
+    #     f.write( generate.generate_rootkml(
+    #         title = title,
+    #         north = north,
+    #         south = south,
+    #         east = east,
+    #         west = west,
+    #         tilesize = tilesize,
+    #         tileformat = tileformat,
+    #         publishurl = ""
+    #     ))
+    #     f.close()
+    #     
+    # # Generate Root KML with publishurl
+    # if generatekml and publishurl:
+    #     f = open(os.path.join(output_dir, os.path.basename(output_dir)+'.kml'), 'w')
+    #     f.write( generate.generate_rootkml(
+    #         title = title,
+    #         north = north,
+    #         south = south,
+    #         east = east,
+    #         west = west,
+    #         tilesize = tilesize,
+    #         tileformat = tileformat,
+    #         publishurl = publishurl
+    #     ))
+    #     f.close()
 
     #
     # Main cycle for TILE and KML generating.
@@ -375,7 +383,17 @@ if __name__ == '__main__':
 
     if mb_output:
         mb_db_filename = output_dir
+        print "Connecting to database %s" % mb_db_filename
+
         mb_db = sqlite3.connect(mb_db_filename)
+        # mb_db.execute("""
+        # CREATE TABLE tiles (
+        #   zoom_level integer, 
+        #   tile_column integer, 
+        #   tile_row integer, 
+        #   tile_data blob) if not exists;
+        # """)       
+        # mb_db.commit()
 
     for zoom in range(maxzoom, -1, -1):
 
@@ -436,25 +454,26 @@ if __name__ == '__main__':
                 else:
                     writetile(filename, data, dxsize, dysize, bands)
                
-                # Create a KML file for this tile.
-                if generatekml:
-                    f = open(os.path.join(output_dir, '%d/%d/%d.kml' % (zoom, ix, iy)), 'w')
-                    f.write(generate.generate_kml(
-                        zoom = zoom,
-                        ix = ix,
-                        iy = iy,
-                        rpixel = zoompixels[zoom],
-                        tilesize = tilesize,
-                        tileformat = tileformat,
-                        south = south,
-                        west = west,
-                        xsize = xsize,
-                        ysize = ysize,
-                        maxzoom = maxzoom
-                    ))
-                    f.close()
+                # # Create a KML file for this tile.
+                # if generatekml:
+                #     f = open(os.path.join(output_dir, '%d/%d/%d.kml' % (zoom, ix, iy)), 'w')
+                #     f.write(generate.generate_kml(
+                #         zoom = zoom,
+                #         ix = ix,
+                #         iy = iy,
+                #         rpixel = zoompixels[zoom],
+                #         tilesize = tilesize,
+                #         tileformat = tileformat,
+                #         south = south,
+                #         west = west,
+                #         xsize = xsize,
+                #         ysize = ysize,
+                #         maxzoom = maxzoom
+                #     ))
+                #     f.close()
 
                 tileno += 1
 
+    mb_db.close()
     # Last \n for the progress bar
     print "\nDone"
