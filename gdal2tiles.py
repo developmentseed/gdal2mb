@@ -386,14 +386,14 @@ if __name__ == '__main__':
         print "Connecting to database %s" % mb_db_filename
 
         mb_db = sqlite3.connect(mb_db_filename)
-        # mb_db.execute("""
-        # CREATE TABLE tiles (
-        #   zoom_level integer, 
-        #   tile_column integer, 
-        #   tile_row integer, 
-        #   tile_data blob) if not exists;
-        # """)       
-        # mb_db.commit()
+        mb_db.execute("""
+        CREATE TABLE tiles (
+          zoom_level integer, 
+          tile_column integer, 
+          tile_row integer, 
+          tile_data blob);
+        """)       
+        mb_db.commit()
 
     for zoom in range(maxzoom, -1, -1):
 
