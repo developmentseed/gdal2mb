@@ -1,13 +1,15 @@
 #!/usr/bin/env python
-###############################################################################
-# $Id$
 #
+# MapBox tile generator written by 
+# Tom MacWright <macwright [-at-] gmail.com>, based on 
+# gdal2tiles.py, whose license and author are noted below
+#
+###############################################################################
 # Project:  Google Summer of Code 2007
 # Purpose:  Convert a raster into TMS tiles, create KML SuperOverlay EPSG:4326,
 #           generate a simple HTML viewers based on Google Maps and OpenLayers
 # Author:   Klokan Petr Pridal, klokan at klokan dot cz
 # Web:      http://www.klokan.cz/projects/gdal2tiles/
-#
 ###############################################################################
 # Copyright (c) 2007, Klokan Petr Pridal
 # 
@@ -26,18 +28,13 @@
 # Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 # Boston, MA 02111-1307, USA.
 ###############################################################################
-#
-# Uploaded as ticket #1763 of http://trac.osgeo.org/gdal/ 
-# Patch #1815: Python 2.2 back-compatibility (needed for FWTools under Linux)
-# Patch #1870: Google Earth KML Children Visibility + Square Pixel Condition
-# OpenLayers 2.4 patch, note on #1763
-#
 
 from osgeo import gdal 
-import sys, os, tempfile
+import sys, os
 from osgeo.gdalconst import GA_ReadOnly
 from osgeo.osr import SpatialReference
 from math import ceil, log10
+from optparse import OptionParser
 import operator
 import sqlite3
 
@@ -118,107 +115,37 @@ def writemb(index, data, dxsize, dysize, bands, mb_db):
     cur.close()
     return 0
 
-# =============================================================================
-def Usage():
-    print 'Usage: gdal2tiles.py [-title "Title"] [-publishurl http://yourserver/dir/]'
-    print '                     [-nogooglemaps] [-noopenlayers] [-nokml]'
-    print '                     [-googlemapskey KEY] [-forcekml] [-v]'
-    print '                     input_file [output_dir or outputfile.mbtiles]'
-    print
-
-# =============================================================================
-#
-# Program mainline.
-#
-# =============================================================================
-
 if __name__ == '__main__':
+
+
+    parser = OptionParser("%prog usage: %prog [input_file] [output_file]")
+    parser.add_option('-t', '--title', dest='title', help='Tileset title')
+    parser.add_option('-o', '--overlay', 
+        dest='overlay', default=False, help='Overlay')
+
+    (options, args) = parser.parse_args()
+
+    try:
+        input_file = args[0]
+        output_file = args[1]
+    except IndexError, e:
+        raise Exception('Input and Output file arguments are required')
 
     profile = 'local' # later there should be support for TMS global profiles
     title = ''
-    publishurl = ''
-    googlemapskey = 'INSERT_YOUR_KEY_HERE' # when not supplied as parameter
-    nogooglemaps = False
-    noopenlayers = False
-    nokml = False
-    forcekml = False
 
     input_file = ''
     output_dir = ''
 
     isepsg4326 = False
-    generatekml = False
 
     gdal.AllRegister()
-    argv = gdal.GeneralCmdLineProcessor( sys.argv )
-    if argv is None:
-        sys.exit( 0 )
-
-    # Parse command line arguments.
-    # TODO: rewrite in OptionParser form
-    i = 1
-    while i < len(argv):
-        arg = argv[i]
-
-        if arg == '-v':
-            verbose = True
-
-        elif arg == '-nogooglemaps':
-            nogooglemaps = True
-
-        elif arg == '-noopenlayers':
-            noopenlayers = True
-
-        elif arg == '-nokml':
-            nokml = True
-
-        elif arg == '-forcekml':
-            forcekml = True
-
-        elif arg == '-title':
-            i += 1
-            title = argv[i]
-
-        elif arg == '-publishurl':
-            i += 1
-            publishurl = argv[i]
-
-        elif arg == '-googlemapskey':
-            i += 1
-            googlemapskey = argv[i]
-
-        elif arg[:1] == '-':
-            print >>sys.stderr, 'Unrecognised command option: ', arg
-            Usage()
-            sys.exit( 1 )
-
-        elif not input_file:
-            input_file = argv[i]
-
-        elif not output_dir:
-            output_dir = argv[i]
-
-        else:
-            print >>sys.stderr, 'Too many parameters already: ', arg
-            Usage()
-            sys.exit( 1 )
-            
-        i = i + 1
-
-    if not input_file:
-        print >>sys.stderr, 'No input_file was given.'
-        Usage()
-        sys.exit( 1 )
 
     # Set correct default values.
     if not title:
         title = os.path.basename( input_file )
     if not output_dir:
         output_dir = os.path.splitext(os.path.basename( input_file ))[0]
-    if publishurl and not publishurl.endswith('/'):
-        publishurl += '/'
-    if publishurl:
-        publishurl += os.path.basename(output_dir) + '/'
     mb_output = os.path.splitext(output_dir)[1] == '.mbtiles'
 
     # Open input_file and get all necessary information.
@@ -238,9 +165,9 @@ if __name__ == '__main__':
     projection = dataset.GetProjection()
 
     north = geotransform[3]
-    south = geotransform[3]+geotransform[5]*ysize
-    east = geotransform[0]+geotransform[1]*xsize
-    west = geotransform[0]
+    south = geotransform[3] + geotransform[5] * ysize
+    east  = geotransform[0] + geotransform[1] * xsize
+    west  = geotransform[0]
 
     if verbose:
         print "Input (%s):" % input_file
@@ -259,36 +186,18 @@ if __name__ == '__main__':
             if verbose:
                 print "Projection detected as EPSG:4326"
 
-    if (isepsg4326 or forcekml) and (north, south, east, west) != (0, xsize, ysize, 0):
-        generatekml = True
-    if verbose:
-        if generatekml:
-            print "Generating of KML is possible"
-        else:
-            print "It is not possible to generate KML (projection is not EPSG:4326 or there are no coordinates)!"
-
-    if forcekml and (north, south, east, west) == (0, xsize, ysize, 0):
-        print >> sys.stderr, "Geographic coordinates not available for given file '%s'" % input_file
-        print >> sys.stderr, "so KML file can not be generated."
-        sys.exit( 1 )
-
-
     # Python 2.2 compatibility.
     log2 = lambda x: log10(x) / log10(2) # log2 (base 2 logarithm)
-    sum = lambda seq, start=0: reduce( operator.add, seq, start)
+    sum = lambda seq, start=0: reduce(operator.add, seq, start)
 
     # Zoom levels of the pyramid.
     maxzoom = int(max(ceil(log2(xsize/float(tilesize))), ceil(log2(ysize/float(tilesize)))))
     zoompixels = [geotransform[1] * 2.0**(maxzoom-zoom) for zoom in range(0, maxzoom+1)]
-    tilecount = sum( [
+    tilecount = sum([
         int(ceil(xsize / (2.0**(maxzoom-zoom)*tilesize))) * \
         int(ceil(ysize / (2.0**(maxzoom-zoom)*tilesize))) \
         for zoom in range(maxzoom+1)
-    ] )
-
-    # Create output directory, if it doesn't exist
-    #if not os.path.isdir(output_dir):
-    #    os.makedirs(output_dir)
+    ])
 
     if verbose:
         print "Output (%s):" % output_dir
@@ -299,9 +208,6 @@ if __name__ == '__main__':
         print "  Zoom levels of the pyramid:", maxzoom
         print "  Pixel resolution by zoomlevels:", zoompixels
 
-    #
-    # Main cycle for TILE and KML generating.
-    #
     tileno = 0
     progress = 0
 
@@ -372,12 +278,7 @@ if __name__ == '__main__':
                
                 # Load raster from read window.
                 data = dataset.ReadRaster(rx, ry, rxsize, rysize, dxsize, dysize)
-                # Write that raster to the tile.
-                if mb_output:
-                    writemb((zoom, ix, iy), data, dxsize, dysize, bands, mb_db)
-                else:
-                    writetile(filename, data, dxsize, dysize, bands)
-
+                writemb((zoom, ix, iy), data, dxsize, dysize, bands, mb_db)
                 tileno += 1
 
     mb_db.close()
