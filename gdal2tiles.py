@@ -105,7 +105,7 @@ if __name__ == '__main__':
     parser = OptionParser("%prog usage: %prog [input_file] [output_file]")
     parser.add_option('-n', '--name', dest='name', help='Name')
     parser.add_option('-d', '--description', dest='description', help='Description')
-    parser.add_option('-v', '--verbose', dest='verbose', help='Verbose')
+    parser.add_option('-v', '--verbose', dest='verbose', help='Verbose', action='store_true')
     parser.add_option('-r', '--version', dest='version', help='Version', default='1.0')
     parser.add_option('-o', '--overlay', action='store_true',
         dest='overlay', default=False, help='Overlay')
@@ -172,7 +172,7 @@ if __name__ == '__main__':
     ])
 
     if options.verbose:
-        print "Output (%s):" % output_file
+        print "Output (%s):" % db_filename
         print "="*80
         print "  Format of tiles:", tiledriver.ShortName, '/', tiledriver.LongName
         print "  Size of a tile:", tilesize, 'x', tilesize, 'pixels'
