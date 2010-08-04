@@ -39,9 +39,6 @@ from osgeo.gdalconst import GA_ReadOnly
 from osgeo.osr import SpatialReference
 from math import ceil, log10
 import operator
-
-import generate
-
 import sqlite3
 
 verbose = False
@@ -302,79 +299,6 @@ if __name__ == '__main__':
         print "  Zoom levels of the pyramid:", maxzoom
         print "  Pixel resolution by zoomlevels:", zoompixels
 
-    # Generate tilemapresource.xml.
-    # f = open(os.path.join(output_dir, 'tilemapresource.xml'), 'w')
-    # f.write(generate.generate_tilemapresource( 
-    #     title = title,
-    #     north = north,
-    #     south = south,
-    #     east = east,
-    #     west = west,
-    #     isepsg4326 = isepsg4326,
-    #     projection = projection,
-    #     publishurl = publishurl,
-    #     zoompixels = zoompixels,
-    #     tilesize = tilesize,
-    #     tileformat = tileformat,
-    #     profile = profile
-    # ))
-    # f.close()
-
-    # # Generate googlemaps.html
-    # if not nogooglemaps:
-    #     f = open(os.path.join(output_dir, 'googlemaps.html'), 'w')
-    #     f.write( generate.generate_googlemaps(
-    #       title = title,
-    #       googlemapskey = googlemapskey,
-    #       xsize = xsize,
-    #       ysize = ysize,
-    #       maxzoom = maxzoom,
-    #       tilesize = tilesize
-    #     ))
-    #     f.close()
-
-    # # Generate openlayers.html
-    # if not noopenlayers:
-    #     f = open(os.path.join(output_dir, 'openlayers.html'), 'w')
-    #     f.write( generate.generate_openlayers(
-    #       title = title,
-    #       xsize = xsize,
-    #       ysize = ysize,
-    #       maxzoom = maxzoom,
-    #       tileformat = tileformat
-    #     ))
-    #     f.close()
-    #     
-    # # Generate Root KML
-    # if generatekml:
-    #     f = open(os.path.join(output_dir, 'doc.kml'), 'w')
-    #     f.write( generate.generate_rootkml(
-    #         title = title,
-    #         north = north,
-    #         south = south,
-    #         east = east,
-    #         west = west,
-    #         tilesize = tilesize,
-    #         tileformat = tileformat,
-    #         publishurl = ""
-    #     ))
-    #     f.close()
-    #     
-    # # Generate Root KML with publishurl
-    # if generatekml and publishurl:
-    #     f = open(os.path.join(output_dir, os.path.basename(output_dir)+'.kml'), 'w')
-    #     f.write( generate.generate_rootkml(
-    #         title = title,
-    #         north = north,
-    #         south = south,
-    #         east = east,
-    #         west = west,
-    #         tilesize = tilesize,
-    #         tileformat = tileformat,
-    #         publishurl = publishurl
-    #     ))
-    #     f.close()
-
     #
     # Main cycle for TILE and KML generating.
     #
@@ -453,24 +377,6 @@ if __name__ == '__main__':
                     writemb((zoom, ix, iy), data, dxsize, dysize, bands, mb_db)
                 else:
                     writetile(filename, data, dxsize, dysize, bands)
-               
-                # # Create a KML file for this tile.
-                # if generatekml:
-                #     f = open(os.path.join(output_dir, '%d/%d/%d.kml' % (zoom, ix, iy)), 'w')
-                #     f.write(generate.generate_kml(
-                #         zoom = zoom,
-                #         ix = ix,
-                #         iy = iy,
-                #         rpixel = zoompixels[zoom],
-                #         tilesize = tilesize,
-                #         tileformat = tileformat,
-                #         south = south,
-                #         west = west,
-                #         xsize = xsize,
-                #         ysize = ysize,
-                #         maxzoom = maxzoom
-                #     ))
-                #     f.close()
 
                 tileno += 1
 
