@@ -38,59 +38,18 @@ from optparse import OptionParser
 import operator
 import sqlite3
 
-verbose = False
-
 tilesize = 256
 tileformat = 'jpeg'
 
 tempdriver = gdal.GetDriverByName('MEM')
 tiledriver = gdal.GetDriverByName(tileformat)
 
-# =============================================================================
-def writetile( filename, data, dxsize, dysize, bands):
-    """
-    Write raster 'data' (of the size 'dataxsize' x 'dataysize') read from
-    'dataset' into the tile 'filename' with size 'tilesize' pixels.
-    Later this should be replaced by new <TMS Tile Raster Driver> from GDAL.
-    """
-
-    # Create needed directories for output
-    dirs, file = os.path.split(filename)
-    if not os.path.isdir(dirs):
-        os.makedirs(dirs)
-
-    # GRR, PNG DRIVER DOESN'T HAVE CREATE() !!!
-    # so we have to create temporary file in memmory...
-
-    #TODO: Add transparency to files with one band only too (grayscale).
-    if bands == 3 and tileformat == 'png':
-        tmp = tempdriver.Create('', tilesize, tilesize, bands=4)
-        alpha = tmp.GetRasterBand(4)
-        alphaarray = (zeros((dysize, dxsize)) + 255).astype('b')
-        alpha.WriteArray(alphaarray, 0, tilesize-dysize )
-    else:
-        tmp = tempdriver.Create('', tilesize, tilesize, bands=bands)
-
-    # (write data from the bottom left corner)
-    tmp.WriteRaster(0, tilesize-dysize, dxsize, dysize, data, band_list=range(1, bands+1))
- 
-    # ... and then copy it into the final tile with given filename
-    tiledriver.CreateCopy(filename, tmp, strict=0)
-
-    return 0
-
-# =============================================================================
 def writemb(index, data, dxsize, dysize, bands, mb_db):
     """
     Write raster 'data' (of the size 'dataxsize' x 'dataysize') read from
     'dataset' into the mbtiles document 'mb_db' with size 'tilesize' pixels.
     Later this should be replaced by new <TMS Tile Raster Driver> from GDAL.
     """
-
-    # GRR, PNG DRIVER DOESN'T HAVE CREATE() !!!
-    # so we have to create temporary file in memmory...
-
-    #TODO: Add transparency to files with one band only too (grayscale).
     if bands == 3 and tileformat == 'png':
         tmp = tempdriver.Create('', tilesize, tilesize, bands=4)
         alpha = tmp.GetRasterBand(4)
@@ -100,14 +59,11 @@ def writemb(index, data, dxsize, dysize, bands, mb_db):
     else:
         tmp = tempdriver.Create('', tilesize, tilesize, bands=bands)
 
-    # (write data from the bottom left corner)
     tmp.WriteRaster( 0, tilesize-dysize, dxsize, dysize, data, band_list=range(1, bands+1))
- 
-    # ... and then copy it into the final tile with given filename
     tiledriver.CreateCopy('tmp.png', tmp, strict=0)
-
-    # print raw_data
-    query = """insert into tiles (zoom_level, tile_column, tile_row, tile_data) values (%d, %d, %d, ?)""" % (index[0], index[1], index[2])
+    query = """insert into tiles 
+        (zoom_level, tile_column, tile_row, tile_data) 
+        values (%d, %d, %d, ?)""" % (index[0], index[1], index[2])
     cur = mb_db.cursor()
     d = open('tmp.png', 'rb').read()
     cur.execute(query, (sqlite3.Binary(d),))
@@ -115,11 +71,20 @@ def writemb(index, data, dxsize, dysize, bands, mb_db):
     cur.close()
     return 0
 
+def init_db(db):
+    mb_db.execute("""
+      CREATE TABLE tiles (
+        zoom_level integer, 
+        tile_column integer, 
+        tile_row integer, 
+        tile_data blob);
+    """)       
+    mb_db.commit()
+
 if __name__ == '__main__':
-
-
     parser = OptionParser("%prog usage: %prog [input_file] [output_file]")
     parser.add_option('-t', '--title', dest='title', help='Tileset title')
+    parser.add_option('-v', '--verbose', dest='verbose', help='Verbose')
     parser.add_option('-o', '--overlay', 
         dest='overlay', default=False, help='Overlay')
 
@@ -127,15 +92,11 @@ if __name__ == '__main__':
 
     try:
         input_file = args[0]
-        output_file = args[1]
+        db_filename = args[1]
     except IndexError, e:
         raise Exception('Input and Output file arguments are required')
 
     profile = 'local' # later there should be support for TMS global profiles
-    title = ''
-
-    input_file = ''
-    output_dir = ''
 
     isepsg4326 = False
 
@@ -149,10 +110,10 @@ if __name__ == '__main__':
     mb_output = os.path.splitext(output_dir)[1] == '.mbtiles'
 
     # Open input_file and get all necessary information.
-    dataset = gdal.Open( input_file, GA_ReadOnly )
+    dataset = gdal.Open(input_file, GA_ReadOnly)
+
     if dataset is None:
-        Usage()
-        sys.exit( 1 )
+        parser.usage()
         
     bands = dataset.RasterCount
     if bands == 3 and tileformat == 'png':
@@ -161,7 +122,6 @@ if __name__ == '__main__':
     ysize = dataset.RasterYSize
 
     geotransform = dataset.GetGeoTransform()
-
     projection = dataset.GetProjection()
 
     north = geotransform[3]
@@ -177,14 +137,10 @@ if __name__ == '__main__':
         print "  Projection:", projection
         print "  NSEW: ", (north, south, east, west) 
 
-    if projection:
-        # CHECK: Is there better way how to test that given file is in EPSG:4326?
-        #spatialreference = SpatialReference(wkt=projection)
-        #if spatialreference.???() == 4326:
-        if projection.endswith('AUTHORITY["EPSG","4326"]]'):
-            isepsg4326 = True
-            if verbose:
-                print "Projection detected as EPSG:4326"
+    if projection and projection.endswith('AUTHORITY["EPSG","4326"]]'):
+        isepsg4326 = True
+        if verbose:
+            print "Projection detected as EPSG:4326"
 
     # Python 2.2 compatibility.
     log2 = lambda x: log10(x) / log10(2) # log2 (base 2 logarithm)
@@ -211,19 +167,9 @@ if __name__ == '__main__':
     tileno = 0
     progress = 0
 
-    if mb_output:
-        mb_db_filename = output_dir
-        print "Connecting to database %s" % mb_db_filename
-
-        mb_db = sqlite3.connect(mb_db_filename)
-        mb_db.execute("""
-        CREATE TABLE tiles (
-          zoom_level integer, 
-          tile_column integer, 
-          tile_row integer, 
-          tile_data blob);
-        """)       
-        mb_db.commit()
+    print "Connecting to database %s" % db_filename
+    mb_db = sqlite3.connect(db_filename)
+    init_db(mb_db)
 
     for zoom in range(maxzoom, -1, -1):
 
