@@ -71,21 +71,43 @@ def writemb(index, data, dxsize, dysize, bands, mb_db):
     cur.close()
     return 0
 
-def init_db(db):
+def init_db(db_filename, metadata):
+    if os.path.isfile(db_filename):
+        raise Exception('Output file already exists')
+    mb_db = sqlite3.connect(db_filename)
     mb_db.execute("""
       CREATE TABLE tiles (
         zoom_level integer, 
         tile_column integer, 
         tile_row integer, 
         tile_data blob);
-    """)       
+    """)
+    mb_db.execute("""
+      CREATE UNIQUE INDEX tile_index on tiles 
+        (zoom_level, tile_column, tile_row);
+    """)
+    mb_db.execute("""
+      CREATE TABLE "metadata" (
+        "name" TEXT ,
+        "value" TEXT );
+    """)
+    mb_db.execute("""
+      CREATE UNIQUE INDEX "name" ON "metadata" 
+        ("name");
+    """)
+    mb_db.executemany("""
+      INSERT INTO metadata (name, value) values
+      (?, ?)""", metadata)
     mb_db.commit()
+    return mb_db
 
 if __name__ == '__main__':
     parser = OptionParser("%prog usage: %prog [input_file] [output_file]")
-    parser.add_option('-t', '--title', dest='title', help='Tileset title')
+    parser.add_option('-n', '--name', dest='name', help='Name')
+    parser.add_option('-d', '--description', dest='description', help='Description')
     parser.add_option('-v', '--verbose', dest='verbose', help='Verbose')
-    parser.add_option('-o', '--overlay', 
+    parser.add_option('-r', '--version', dest='version', help='Version', default='1.0')
+    parser.add_option('-o', '--overlay', action='store_true',
         dest='overlay', default=False, help='Overlay')
 
     (options, args) = parser.parse_args()
@@ -99,19 +121,13 @@ if __name__ == '__main__':
     profile = 'local' # later there should be support for TMS global profiles
 
     isepsg4326 = False
-
     gdal.AllRegister()
 
     # Set correct default values.
-    if not title:
-        title = os.path.basename( input_file )
-    if not output_dir:
-        output_dir = os.path.splitext(os.path.basename( input_file ))[0]
-    mb_output = os.path.splitext(output_dir)[1] == '.mbtiles'
+    if not options.name:
+        options.name = os.path.basename(input_file)
 
-    # Open input_file and get all necessary information.
     dataset = gdal.Open(input_file, GA_ReadOnly)
-
     if dataset is None:
         parser.usage()
         
@@ -129,7 +145,7 @@ if __name__ == '__main__':
     east  = geotransform[0] + geotransform[1] * xsize
     west  = geotransform[0]
 
-    if verbose:
+    if options.verbose:
         print "Input (%s):" % input_file
         print "="*80
         print "  Driver:", dataset.GetDriver().ShortName,'/', dataset.GetDriver().LongName
@@ -139,7 +155,7 @@ if __name__ == '__main__':
 
     if projection and projection.endswith('AUTHORITY["EPSG","4326"]]'):
         isepsg4326 = True
-        if verbose:
+        if options.verbose:
             print "Projection detected as EPSG:4326"
 
     # Python 2.2 compatibility.
@@ -155,8 +171,8 @@ if __name__ == '__main__':
         for zoom in range(maxzoom+1)
     ])
 
-    if verbose:
-        print "Output (%s):" % output_dir
+    if options.verbose:
+        print "Output (%s):" % output_file
         print "="*80
         print "  Format of tiles:", tiledriver.ShortName, '/', tiledriver.LongName
         print "  Size of a tile:", tilesize, 'x', tilesize, 'pixels'
@@ -167,22 +183,25 @@ if __name__ == '__main__':
     tileno = 0
     progress = 0
 
+    layer_type = "overlay" if options.overlay else "baselayer"
+
     print "Connecting to database %s" % db_filename
-    mb_db = sqlite3.connect(db_filename)
-    init_db(mb_db)
+    mb_db = init_db(db_filename, 
+        [('name', options.name),
+        ('version', options.version),
+        ('description', options.description),
+        ('type', layer_type)])
 
     for zoom in range(maxzoom, -1, -1):
-
         # Maximal size of read window in pixels.
         rmaxsize = 2.0**(maxzoom-zoom)*tilesize
 
-        if verbose:
+        if options.verbose:
             print "-"*80
             print "Zoom %s - pixel %.20f" % (zoom, zoompixels[zoom]), int(2.0**zoom*tilesize)
             print "-"*80
 
         for ix in range(0, int( ceil( xsize / rmaxsize))):
-
             # Read window xsize in pixels.
             if ix+1 == int( ceil( xsize / rmaxsize)) and xsize % rmaxsize != 0:
                 rxsize = int(xsize % rmaxsize)
@@ -193,7 +212,6 @@ if __name__ == '__main__':
             rx = int(ix * rmaxsize)
 
             for iy in range(0, int(ceil( ysize / rmaxsize))):
-
                 # Read window ysize in pixels.
                 if iy+1 == int(ceil( ysize / rmaxsize)) and ysize % rmaxsize != 0:
                     rysize = int(ysize % rmaxsize)
@@ -202,25 +220,19 @@ if __name__ == '__main__':
 
                 # Read window top coordinate in pixels.
                 ry = int(ysize - (iy * rmaxsize)) - rysize
-
                 dxsize = int(rxsize/rmaxsize * tilesize)
                 dysize = int(rysize/rmaxsize * tilesize)
-                filename = os.path.join(output_dir, '%d/%d/%d.png' % (zoom, ix, iy))
-
-                if verbose:
-                    # Print info about tile and read area.
-                    print "%d/%d" % (tileno+1,tilecount), filename, [ix, iy], [rx, ry], [rxsize, rysize], [dxsize, dysize]
-                else:
-                    # Show the progress bar.
-                    percent = int(ceil((tileno) / float(tilecount-1) * 100))
-                    while progress <= percent:
-                        if progress % 10 == 0:
-                            sys.stdout.write( "%d" % progress )
-                            sys.stdout.flush()
-                        else:
-                            sys.stdout.write( '.' )
-                            sys.stdout.flush()
-                        progress += 2.5
+                
+                # Show the progress bar.
+                percent = int(ceil((tileno) / float(tilecount-1) * 100))
+                while progress <= percent:
+                    if progress % 10 == 0:
+                        sys.stdout.write( "%d" % progress )
+                        sys.stdout.flush()
+                    else:
+                        sys.stdout.write( '.' )
+                        sys.stdout.flush()
+                    progress += 2.5
                
                 # Load raster from read window.
                 data = dataset.ReadRaster(rx, ry, rxsize, rysize, dxsize, dysize)
