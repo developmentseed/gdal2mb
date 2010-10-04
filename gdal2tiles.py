@@ -241,4 +241,5 @@ if __name__ == '__main__':
 
     mb_db.close()
     # Last \n for the progress bar
-    print "\nDone"
+    print "\nDone creating .mbtiles file. You can now drop this file into a"
+    print "Maps on a Stick 'Maps' folder or MapBox on iPad folder"

@@ -1,19 +1,21 @@
 ### Requirements
 
-* [GDAL Complete](http://www.kyngchaos.com/software/frameworks) from kyngchaos
-* [Python](http://www.python.org/) from anywhere
+* GDAL
+ * OSX: [GDAL Complete](http://www.kyngchaos.com/software/frameworks) from kyngchaos
+ * Other systems: [GDAL binaries](http://trac.osgeo.org/gdal/wiki/DownloadingGdalBinaries)
+* [Python](http://www.python.org/) (included on OSX and Linux)
 
 ### Usage
+
+If GeoTIFFs are in projections other than `EPSG:900913` (as many are), run gdalwarp first:
+
+    gdalwarp -t_srs EPSG:900913 raster.tiff raster_merc.tiff
 
 Run `python gdal2tiles.py -h` for usage instructions.
 
 ### Description
 
 This is a variation of the [gdal2tiles](http://www.klokan.cz/projects/gdal2tiles/) script that supports MapBox `mbtiles` SQLite tilesets as an output option. It has the same requirements as the original script - notably an installation of [GDAL](http://www.gdal.org/).
-
-Note that MapBox supports the `EPSG:900913`, or Google Mercator, projection, alone. Therefore, raster data in other projections must be reprojected with gdalwarp.
-
-    gdalwarp -t_srs raster.tiff raster_merc.tiff
 
 Usage of this command is
 
