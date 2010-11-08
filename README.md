@@ -1,3 +1,5 @@
+![gdal2mb logo](http://mapbox.com/sites/mapbox.com/files/imagecache/scale_150x/tools_gdal2mb.png)
+
 ### Requirements
 
 * GDAL
